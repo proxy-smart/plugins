@@ -9,12 +9,12 @@
  * `smart-launch-debugging` skills — is identical across them. Hand-maintaining that meant
  * either three copies of every SKILL.md, or a dependency between plugins that a customer
  * receiving a single self-contained artifact could not resolve. So the skills live once, in
- * `plugins/source/skills*`, and this assembles each plugin around them.
+ * `source/skills*`, and this assembles each plugin around them.
  *
  * A plugin installed over `git-subdir` only ever clones its own subdirectory, which is why
  * sharing by relative path is not an option and copying at build time is.
  *
- * TARGETS (plugins/source/targets.json):
+ * TARGETS (source/targets.json):
  *   proxy        committed — the Max Health hosted deployment (api.proxy-smart.com)
  *   proxy-beta   committed — the public demo (beta.proxy-smart.com)
  *   proxy-smart  NOT committed — built per customer against their own endpoint
@@ -36,11 +36,13 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(HERE, '..')
-const SOURCE_DIR = join(REPO_ROOT, 'plugins', 'source')
-const PLUGINS_DIR = join(REPO_ROOT, 'plugins')
+// This repository is the plugins themselves, so the generated targets sit at the
+// root next to their source rather than under a plugins/ directory.
+const SOURCE_DIR = join(REPO_ROOT, 'source')
+const PLUGINS_DIR = REPO_ROOT
 
 const AUTHOR = { name: 'Max Health Inc.', url: 'https://maxhealth.tech' }
-const REPOSITORY = 'https://github.com/Max-Health-Inc/proxy-smart'
+const REPOSITORY = 'https://github.com/proxy-smart/plugins'
 const LICENSE = 'AGPL-3.0-or-later OR LicenseRef-Commercial'
 const MARKETPLACE = 'max-health'
 const VERSION = '0.1.0'
@@ -55,7 +57,7 @@ interface Target {
   serverKey: string
   url: string
   homepage: string
-  /** Directory names under plugins/source to copy in, in order. */
+  /** Directory names under source/ to copy in, in order. */
   skills: string[]
   keywords: string[]
   brandColor: string
@@ -163,7 +165,7 @@ function installSection(name: string, t: Target): string {
     '```',
     '',
     'Then restart Claude Code (or `/reload-plugins`). Try it locally first with',
-    `\`claude --plugin-dir ./plugins/${name}\`.`,
+    `\`claude --plugin-dir ./${name}\`.`,
     '',
     '## Install — Codex',
     '',
@@ -344,7 +346,7 @@ async function driftFor(outDir: string, name: string, t: Target): Promise<string
       readFile(join(skill.sourceDir, 'SKILL.md'), 'utf8'),
       readFile(file, 'utf8'),
     ])
-    if (!sameContent(want, got)) drift.push(`${relative(REPO_ROOT, file)} differs from plugins/source`)
+    if (!sameContent(want, got)) drift.push(`${relative(REPO_ROOT, file)} differs from source/`)
   }
   return drift
 }
@@ -371,7 +373,7 @@ async function buildCustomer(rawUrl: string, outArg: string | undefined): Promis
   const targets = await loadTargets()
   const name = 'proxy-smart'
   const source = targets[name]
-  if (!source) throw new Error(`plugins/source/targets.json has no "${name}" target`)
+  if (!source) throw new Error(`source/targets.json has no "${name}" target`)
 
   const mcpUrl = `${url}/mcp`
   const resolve = (text: string): string =>
@@ -411,7 +413,7 @@ async function main(): Promise<void> {
       return
     }
     console.error(
-      'plugin directories are out of date. They are generated from plugins/source — run:\n' +
+      'plugin directories are out of date. They are generated from source/ — run:\n' +
         '  bun run plugins\n\n' +
         drift.map((line) => `  - ${line}`).join('\n'),
     )
@@ -420,7 +422,7 @@ async function main(): Promise<void> {
 
   for (const [name, target] of committed) {
     await writeTarget(join(PLUGINS_DIR, name), name, target)
-    console.log(`wrote plugins/${name} (${(await skillsFor(target)).map((s) => s.slug).join(', ')})`)
+    console.log(`wrote ${name} (${(await skillsFor(target)).map((s) => s.slug).join(', ')})`)
   }
 }
 

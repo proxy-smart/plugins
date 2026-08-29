@@ -1,0 +1,17 @@
+{
+  "name": "@proxy-smart/plugins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent plugins for Proxy Smart — generated from one source tree, listed in the max-health marketplace.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proxy-smart/plugins.git"
+  },
+  "license": "AGPL-3.0-or-later OR LicenseRef-Commercial",
+  "scripts": {
+    "plugins": "bun run scripts/build-plugins.ts",
+    "plugins:check": "bun run scripts/build-plugins.ts --check",
+    "plugins:customer": "bun run scripts/build-plugins.ts"
+  }
+}

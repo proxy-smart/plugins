@@ -42,7 +42,7 @@ read-only assistant.
 ```
 
 Then restart Claude Code (or `/reload-plugins`). Try it locally first with
-`claude --plugin-dir ./plugins/proxy`.
+`claude --plugin-dir ./proxy`.
 
 ## Install — Codex
 

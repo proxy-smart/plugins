@@ -1,4 +1,8 @@
-# Agent plugins
+# Proxy Smart — agent plugins
+
+Lives in its own repository; the plugins are listed in the **max-health** marketplace
+(`Max-Health-Inc/maxhealth.tech`), which fetches each directory from here over `git-subdir`.
+The Proxy Smart server itself is at [proxy-smart/proxy-smart](https://github.com/proxy-smart).
 
 Claude Code and Codex plugins that connect an assistant to a Proxy Smart deployment's admin
 API over MCP. Three of them, differing only in which deployment they point at and who installs
@@ -12,7 +16,7 @@ them.
 
 ## Everything here is generated
 
-`plugins/proxy/` and `plugins/proxy-beta/` are BUILD OUTPUT. Editing them is always the wrong
+`proxy/` and `proxy-beta/` are BUILD OUTPUT. Editing them is always the wrong
 move — the next build overwrites it, and CI (`bun run plugins:check`) fails first. Edit
 [`source/`](source/) and rebuild:
 
@@ -47,12 +51,12 @@ over, because the marketplace it would otherwise come from is a private Max Heal
 
 ```bash
 bun run plugins:customer -- --url https://proxy.their-hospital.example
-# -> dist/plugins/proxy-smart/   (self-contained; no marketplace needed)
+# -> dist/proxy-smart/   (self-contained; no marketplace needed)
 ```
 
 The endpoint is baked into `.mcp.json` so the plugin works as shipped, wrapped in
 `${PROXY_SMART_URL:-…}` so they can repoint it without a rebuild. `--out <dir>` writes
-somewhere other than `dist/plugins/proxy-smart`.
+somewhere other than `dist/proxy-smart`.
 
 Only `https` is accepted: the token audience binds to this URL, and an `http` endpoint would
 put bearer tokens on the wire.
