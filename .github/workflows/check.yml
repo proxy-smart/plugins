@@ -1,0 +1,21 @@
+name: Check
+
+# The drift guard. proxy/ and proxy-beta/ are generated from source/, and the
+# max-health marketplace serves those directories to installers — so a hand-edit
+# there ships to users and is then silently overwritten by the next build. This
+# check existed in the monorepo and has to exist here for the same reason.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    uses: proxy-smart/.github/.github/workflows/check.yml@main
+    with:
+      install: bun install
+      test: bun run plugins:check
+    secrets: inherit
