@@ -20,9 +20,10 @@ follows is the part the schemas do not say: which combination of settings is act
 An app cannot be registered well from a name and a redirect URI. Get these first, because each
 one changes several fields at once and changing them afterwards means re-issuing credentials.
 
-1. **How it launches.** `standalone-app` (the user opens it and picks a patient),
+1. **Whose behalf it acts on.** `standalone-app` (the user opens it and picks a patient),
    `ehr-launch` (an EHR launches it with patient and encounter context), `backend-service`
-   (no user at all, client credentials), or `agent`.
+   (itself, no user at all, client credentials), or `agent` (the user signed in to the app
+   calling it, through token exchange; an MCP server reading FHIR for the user is one).
 2. **Whether it can keep a secret.** A browser or mobile app cannot; a server-side app can.
    This is `clientType` `public` vs `confidential`, and it decides the authentication method.
 3. **What data it needs, at what granularity.** Not "patient records" but the resource types
@@ -46,6 +47,15 @@ sets its own flags — do not also set `publicClient`. Use `systemScopes` (`syst
 `patient/…` or `user/…`, and `private_key_jwt`, which is what SMART Backend Services expects.
 There is no redirect URI and no launch context, so anything patient-scoped is a sign the app
 type is wrong.
+
+**Agent.** `appType: 'agent'` with `private_key_jwt`. It gets token exchange (RFC 8693) and
+no service account: it never holds a token without a user behind it. An MCP server also sets
+`resourceServer: true`, which needs its https MCP URL as the client id, so clients can request
+tokens for it and it may exchange them with `resource=<FHIR base>`. Give it `fhirUser` and
+`user/…` scopes, never `patient/…`: an exchanged token carries no launch patient, so
+patient-scoped access is refused. A host that hands the agent its own sign-in token, rather
+than one requested for the agent, needs an audience mapper on its login client naming the
+agent, or the exchange is refused because the agent is not in the token's audience.
 
 **EHR launch.** Needs the `launch` scope alongside the resource scopes, and a `launchUrl`.
 `patient/…` scopes without `launch` produce an app that authorizes and then has no patient.
