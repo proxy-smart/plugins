@@ -2,42 +2,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Commercial
 
 /**
- * build-plugins.ts — generate the Proxy Smart agent plugins from ONE source tree.
+ * Generates the Proxy Smart agent plugins from source/.
  *
- * Three plugins differ by exactly two things: the endpoint they point at and who is meant to
- * install them. Everything that carries the actual value — the `smart-app-onboarding` and
- * `smart-launch-debugging` skills — is identical across them. Hand-maintaining that meant
- * either three copies of every SKILL.md, or a dependency between plugins that a customer
- * receiving a single self-contained artifact could not resolve. So the skills live once, in
- * `source/skills*`, and this assembles each plugin around them.
+ * The marketplace installs each plugin with `git-subdir`, a sparse checkout of that one
+ * directory, so the skills cannot be shared by path and are copied in at build time.
+ * Targets marked `committed` are written into the repo; `--check` fails when they drift.
  *
- * A plugin installed over `git-subdir` only ever clones its own subdirectory, which is why
- * sharing by relative path is not an option and copying at build time is.
- *
- * TARGETS (source/targets.json):
- *   proxy        committed — the Max Health hosted deployment (api.proxy-smart.com)
- *   proxy-beta   committed — the public demo (beta.proxy-smart.com)
- *   proxy-smart  NOT committed — built per customer against their own endpoint
- *
- * The committed two are what the internal marketplace fetches, so they have to exist in the
- * repo; `--check` is the drift guard that stops someone hand-editing generated output.
- * The customer one is a release artifact and is written outside the repo tree by default.
- *
- * Usage:
- *   bun run plugins                                    # write the committed plugins
- *   bun run plugins:check                              # fail if they are out of date (CI)
- *   bun run plugins:customer -- --url https://…        # build the customer artifact
- *   bun run plugins:customer -- --url https://… --out dist/acme
+ *   bun run plugins                               write the committed plugins
+ *   bun run plugins:check                         fail if they are out of date (CI)
+ *   bun run plugins:customer -- --url https://…   build the customer artifact
  */
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(HERE, '..')
-// This repository is the plugins themselves, so the generated targets sit at the
-// root next to their source rather than under a plugins/ directory.
 const SOURCE_DIR = join(REPO_ROOT, 'source')
 const PLUGINS_DIR = REPO_ROOT
 
@@ -50,14 +31,11 @@ const VERSION = '0.1.0'
 interface Target {
   committed: boolean
   displayName: string
-  /** Completes the README's `# \`name\` — …` heading, so it reads as a clause, not a sentence. */
   headline: string
-  /** Codex's shortDescription, which reads as a sentence of its own. */
   tagline: string
   serverKey: string
   url: string
   homepage: string
-  /** Directory names under source/ to copy in, in order. */
   skills: string[]
   keywords: string[]
   brandColor: string
@@ -68,13 +46,16 @@ interface Target {
   longDescription: string
 }
 
-/** One emitted file: repo-relative path plus its content. */
 interface Artifact {
   path: string
   content: string
 }
 
-// ── Rendering ────────────────────────────────────────────────────────────────
+interface SkillInfo {
+  slug: string
+  summary: string
+  sourceDir: string
+}
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`
@@ -119,20 +100,11 @@ function codexManifest(name: string, t: Target): string {
   })
 }
 
-/**
- * The MCP server config.
- *
- * The customer target gets `${PROXY_SMART_URL:-<their url>}` so the shipped artifact works
- * untouched but can still be repointed; the Max Health targets are fixed, because an env var
- * silently redirecting an assistant away from the deployment named on the tin is a trap, not a
- * feature.
- */
-function mcpConfig(name: string, t: Target): string {
+function mcpConfig(t: Target): string {
   const url = t.committed ? t.url : `\${PROXY_SMART_URL:-${originOf(t.url)}}/mcp`
   return json({ mcpServers: { [t.serverKey]: { type: 'http', url } } })
 }
 
-/** `https://host` from a URL, without reaching for `URL` (this runs before any deps). */
 function originOf(url: string): string {
   const scheme = url.indexOf('://')
   if (scheme === -1) return url
@@ -176,7 +148,6 @@ function installSection(name: string, t: Target): string {
   ].join('\n')
 }
 
-/** One bullet per bundled skill, read from the skill's own frontmatter description. */
 async function skillList(t: Target): Promise<string> {
   const lines = ['It bundles:', '']
   for (const { slug, summary } of await skillsFor(t)) {
@@ -195,18 +166,6 @@ async function skillTree(t: Target): Promise<string> {
     .join('\n')
 }
 
-interface SkillInfo {
-  slug: string
-  summary: string
-  sourceDir: string
-}
-
-/**
- * The skills a target bundles, in declaration order.
- *
- * The one-line summary comes out of each SKILL.md's own frontmatter `description`, so a README
- * bullet cannot drift from the skill it describes — there is no second place to update.
- */
 async function skillsFor(t: Target): Promise<SkillInfo[]> {
   const found: SkillInfo[] = []
   for (const group of t.skills) {
@@ -222,14 +181,6 @@ async function skillsFor(t: Target): Promise<SkillInfo[]> {
   return found
 }
 
-/**
- * The `description:` value from YAML frontmatter, with folded-block newlines flattened.
- *
- * Normalises line endings first. `.gitattributes` pins `eol=crlf`, which git applies on EVERY
- * platform including CI, so these files are CRLF in the working tree everywhere — and a parser
- * matching `---\n` then finds no frontmatter, silently yields an empty summary, and the README
- * ends up with a dangling `— ` after each skill name.
- */
 function descriptionOf(source: string): string {
   const markdown = source.replace(/\r\n/g, '\n')
   const match = /^---\n([\s\S]*?)\n---/.exec(markdown)
@@ -238,12 +189,9 @@ function descriptionOf(source: string): string {
   const start = /^description:[ \t]*(>-|>|\|-|\||.*)$/m.exec(body)
   if (!start) return ''
   if (!start[1].startsWith('>') && !start[1].startsWith('|')) return start[1].trim()
-  // The block's own lines begin AFTER the newline that terminates `description: >-`; slicing
-  // without dropping it makes the first split segment empty and ends the block immediately.
   const after = body.slice(start.index + start[0].length).replace(/^\r?\n/, '')
   const folded: string[] = []
   for (const line of after.split('\n')) {
-    // A folded block runs until the first line that is not indented — the next YAML key.
     if (!/^\s+\S/.test(line)) break
     folded.push(line.trim())
   }
@@ -269,34 +217,45 @@ async function readme(name: string, t: Target): Promise<string> {
     .replaceAll('__INSTALL__', installSection(name, t))
 }
 
-/** Every generated file for one target, except the copied skill directories. */
 async function artifactsFor(name: string, t: Target): Promise<Artifact[]> {
   return [
     { path: '.claude-plugin/plugin.json', content: claudeManifest(name, t) },
     { path: '.codex-plugin/plugin.json', content: codexManifest(name, t) },
-    { path: '.mcp.json', content: mcpConfig(name, t) },
-    { path: '.mcp.codex.json', content: mcpConfig(name, t) },
+    { path: '.mcp.json', content: mcpConfig(t) },
+    { path: '.mcp.codex.json', content: mcpConfig(t) },
     { path: 'README.md', content: await readme(name, t) },
   ]
 }
 
-// ── Emitting ─────────────────────────────────────────────────────────────────
+async function filesUnder(dir: string): Promise<string[]> {
+  if (!existsSync(dir)) return []
+  const files: string[] = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...(await filesUnder(path)))
+    else files.push(path)
+  }
+  return files
+}
 
-/**
- * Write one plugin directory.
- *
- * The skills subtree is removed first rather than merged onto: a skill renamed or dropped in
- * source has to disappear from the output, and copying over the top would leave the old one
- * behind for the marketplace to keep serving.
- */
+function posix(path: string): string {
+  return path.split(sep).join('/')
+}
+
+async function skillFilesFor(t: Target): Promise<Map<string, string>> {
+  const files = new Map<string, string>()
+  for (const skill of await skillsFor(t)) {
+    for (const file of await filesUnder(skill.sourceDir)) {
+      files.set(posix(join('skills', skill.slug, relative(skill.sourceDir, file))), file)
+    }
+  }
+  return files
+}
+
 async function writeTarget(outDir: string, name: string, t: Target): Promise<void> {
   for (const artifact of await artifactsFor(name, t)) {
     const file = join(outDir, artifact.path)
     await mkdir(dirname(file), { recursive: true })
-    // CRLF because `.gitattributes` pins `eol=crlf` for .md and .json, and git applies that on
-    // every platform. Writing LF would leave ten files permanently "modified" in every Windows
-    // working tree — which on this repo is worse than cosmetic, since the version-sync
-    // automation sweeps modified tracked files into commits of its own.
     await writeFile(file, toCrlf(artifact.content), 'utf8')
   }
   const skillsOut = join(outDir, 'skills')
@@ -306,73 +265,94 @@ async function writeTarget(outDir: string, name: string, t: Target): Promise<voi
   }
 }
 
-/**
- * Compare ignoring line endings.
- *
- * `.gitattributes` pins `eol=crlf` for .ts/.json/.md, so a Windows checkout has CRLF on disk
- * while git stores LF and this script writes LF. A byte comparison therefore reports every
- * generated file as drifted on Windows and none of them on CI, which is the least useful
- * possible drift guard. What matters is the content, so normalise before comparing.
- */
 function sameContent(a: string, b: string): boolean {
   return a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n')
 }
 
-/** Line endings this repo's `.gitattributes` asks for on the generated file types. */
 function toCrlf(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
 }
 
-/** Differences between what is on disk and what the source says it should be. */
 async function driftFor(outDir: string, name: string, t: Target): Promise<string[]> {
-  const drift: string[] = []
+  const expected = new Map<string, () => Promise<string>>()
   for (const artifact of await artifactsFor(name, t)) {
-    const file = join(outDir, artifact.path)
-    if (!existsSync(file)) {
-      drift.push(`${relative(REPO_ROOT, file)} is missing`)
-      continue
-    }
-    if (!sameContent(await readFile(file, 'utf8'), artifact.content)) {
-      drift.push(`${relative(REPO_ROOT, file)} differs from the source`)
-    }
+    expected.set(artifact.path, async () => artifact.content)
   }
-  for (const skill of await skillsFor(t)) {
-    const file = join(outDir, 'skills', skill.slug, 'SKILL.md')
-    if (!existsSync(file)) {
-      drift.push(`${relative(REPO_ROOT, file)} is missing`)
-      continue
+  for (const [path, source] of await skillFilesFor(t)) {
+    expected.set(path, () => readFile(source, 'utf8'))
+  }
+
+  const drift: string[] = []
+  for (const [path, want] of expected) {
+    const file = join(outDir, path)
+    const shown = posix(relative(REPO_ROOT, file))
+    if (!existsSync(file)) drift.push(`${shown} is missing`)
+    else if (!sameContent(await readFile(file, 'utf8'), await want())) drift.push(`${shown} differs from source/`)
+  }
+  for (const file of await filesUnder(join(outDir, 'skills'))) {
+    if (!expected.has(posix(relative(outDir, file)))) {
+      drift.push(`${posix(relative(REPO_ROOT, file))} has no counterpart in source/`)
     }
-    const [want, got] = await Promise.all([
-      readFile(join(skill.sourceDir, 'SKILL.md'), 'utf8'),
-      readFile(file, 'utf8'),
-    ])
-    if (!sameContent(want, got)) drift.push(`${relative(REPO_ROOT, file)} differs from source/`)
   }
   return drift
 }
-
-// ── Entry point ──────────────────────────────────────────────────────────────
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`)
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-async function loadTargets(): Promise<Record<string, Target>> {
-  return JSON.parse(await readFile(join(SOURCE_DIR, 'targets.json'), 'utf8')) as Record<string, Target>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Build the customer artifact: the target's placeholders resolved against their endpoint. */
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function toTarget(name: string, raw: unknown): Target {
+  if (!isRecord(raw)) throw new Error(`target "${name}" must be an object`)
+  const { committed, skills, keywords } = raw
+  if (typeof committed !== 'boolean') throw new Error(`target "${name}".committed must be a boolean`)
+  if (!isStringArray(skills)) throw new Error(`target "${name}".skills must be a string array`)
+  if (!isStringArray(keywords)) throw new Error(`target "${name}".keywords must be a string array`)
+  const text = (field: string): string => {
+    const value = raw[field]
+    if (typeof value !== 'string') throw new Error(`target "${name}".${field} must be a string`)
+    return value
+  }
+  return {
+    committed,
+    skills,
+    keywords,
+    displayName: text('displayName'),
+    headline: text('headline'),
+    tagline: text('tagline'),
+    serverKey: text('serverKey'),
+    url: text('url'),
+    homepage: text('homepage'),
+    brandColor: text('brandColor'),
+    category: text('category'),
+    endpointHeading: text('endpointHeading'),
+    endpointBody: text('endpointBody'),
+    description: text('description'),
+    longDescription: text('longDescription'),
+  }
+}
+
+async function loadTargets(): Promise<Map<string, Target>> {
+  const raw: unknown = JSON.parse(await readFile(join(SOURCE_DIR, 'targets.json'), 'utf8'))
+  if (!isRecord(raw)) throw new Error('source/targets.json must be an object')
+  return new Map(Object.entries(raw).map(([name, value]) => [name, toTarget(name, value)]))
+}
+
 async function buildCustomer(rawUrl: string, outArg: string | undefined): Promise<void> {
   const url = rawUrl.replace(/\/+$/, '')
   if (!url.startsWith('https://')) {
-    // Not pedantry: the token audience binds to this URL, and an http endpoint would hand
-    // bearer tokens to the network.
     throw new Error(`--url must be https, got: ${rawUrl}`)
   }
-  const targets = await loadTargets()
   const name = 'proxy-smart'
-  const source = targets[name]
+  const source = (await loadTargets()).get(name)
   if (!source) throw new Error(`source/targets.json has no "${name}" target`)
 
   const mcpUrl = `${url}/mcp`
@@ -394,8 +374,7 @@ async function buildCustomer(rawUrl: string, outArg: string | undefined): Promis
 }
 
 async function main(): Promise<void> {
-  const targets = await loadTargets()
-  const committed = Object.entries(targets).filter(([, t]) => t.committed)
+  const committed = [...(await loadTargets())].filter(([, t]) => t.committed)
 
   const customerUrl = flag('url')
   if (customerUrl) {
