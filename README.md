@@ -25,6 +25,11 @@ bun run plugins          # rewrite the committed plugin directories
 bun run plugins:check    # fail if they are out of date (runs in CI)
 ```
 
+`plugins:check` also fails when anything in `source/` names an admin tool the Proxy Smart API
+does not have. The tool list is read from `docs/public/admin-api.json` on proxy-smart's `main`,
+which that repository generates from its route table; set `ADMIN_API_CONTRACT` to check against
+another copy.
+
 The reason is the skills. `smart-app-onboarding` and `smart-launch-debugging` are the same in
 every plugin, and a `git-subdir` install clones only its own subdirectory — so they cannot be
 shared by path, only copied. One copy in `source/skills/` and a build step beats three copies
