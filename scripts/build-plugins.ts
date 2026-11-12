@@ -16,6 +16,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isRecord, isStringArray } from './guards'
 import { staleToolNames } from './tool-names'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -301,14 +302,6 @@ async function driftFor(outDir: string, name: string, t: Target): Promise<string
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`)
   return index === -1 ? undefined : process.argv[index + 1]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
 function toTarget(name: string, raw: unknown): Target {
