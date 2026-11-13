@@ -64,9 +64,12 @@ codex plugin add proxy@max-health
 ## What the server exposes
 
 Tools are derived from the Elysia admin routes at startup, so they track the deployment's own
-API rather than a hand-maintained list. The naming is `<verb>_<path>`, giving
-`get_admin_smart-apps`, `create_admin_smart-apps`, `update_admin_smart-apps_clientId`, and so
-on. The families:
+API rather than a hand-maintained list. Each route that changes something is a tool named
+`<verb>_<path>`, giving `create_admin_smart-apps_`, `update_admin_smart-apps_clientId`,
+`delete_admin_smart-apps_clientId`, and so on; reads go through `read_resource` with the route's
+path. The full list is in the
+[Admin API reference](https://github.com/proxy-smart/proxy-smart/blob/main/docs/admin-api.md).
+The families:
 
 | Area | Covers |
 | --- | --- |

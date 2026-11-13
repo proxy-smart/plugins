@@ -16,6 +16,8 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isRecord, isStringArray } from './guards'
+import { staleToolNames } from './tool-names'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(HERE, '..')
@@ -302,14 +304,6 @@ function flag(name: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
 function toTarget(name: string, raw: unknown): Target {
   if (!isRecord(raw)) throw new Error(`target "${name}" must be an object`)
   const { committed, skills, keywords } = raw
@@ -387,6 +381,13 @@ async function main(): Promise<void> {
     for (const [name, target] of committed) {
       drift.push(...(await driftFor(join(PLUGINS_DIR, name), name, target)))
     }
+    const sources = await Promise.all(
+      (await filesUnder(SOURCE_DIR)).map(async (file) => ({
+        path: posix(relative(REPO_ROOT, file)),
+        text: await readFile(file, 'utf8'),
+      })),
+    )
+    drift.push(...(await staleToolNames(sources)))
     if (drift.length === 0) {
       console.log(`plugins are up to date (${committed.map(([n]) => n).join(', ')})`)
       return
