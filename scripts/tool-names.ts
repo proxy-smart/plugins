@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Max Health Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Commercial
 
-import { isRecord } from './guards'
+import { isRecord } from '@proxy-smart/guards'
 
 const ADMIN_API_CONTRACT =
   process.env.ADMIN_API_CONTRACT ??

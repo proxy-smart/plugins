@@ -13,5 +13,8 @@
     "plugins": "bun run scripts/build-plugins.ts",
     "plugins:check": "bun run scripts/build-plugins.ts --check",
     "plugins:customer": "bun run scripts/build-plugins.ts"
+  },
+  "dependencies": {
+    "@proxy-smart/guards": "^0.1.0"
   }
 }
