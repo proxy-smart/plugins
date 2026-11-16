@@ -16,7 +16,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isRecord, isStringArray } from './guards'
+import { isRecord, isStringArray } from '@proxy-smart/guards'
 import { staleToolNames } from './tool-names'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@proxy-smart/plugins",
+      "dependencies": {
+        "@proxy-smart/guards": "^0.1.0",
+      },
+    },
+  },
+  "packages": {
+    "@proxy-smart/guards": ["@proxy-smart/guards@0.1.0", "https://npm.pkg.github.com/download/@proxy-smart/guards/0.1.0/24c6781e35bfb7bcaa64a65c72566645404e5331", {}, "sha512-a6Cg94XMj3QDq234+jJ9T7reElFWlip8WSnVNacTmXGEaTJTbsWGz4ViKIbvVuzQ9Xxf8YmFXZ3nd+O/pinUXA=="],
+  }
+}
